@@ -5,5 +5,6 @@ setup(
     version='1.0',
     description='BLStream patronage challenge solution',
     author='Arkadiusz Jamrocha',
-    packages=['csv2json']
+    packages=['csv2json'],
+    install_requires=['pymongo'],
 )

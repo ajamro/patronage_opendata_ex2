@@ -1,9 +1,12 @@
+from argparse import ArgumentError
 import datetime
 import csv
 import argparse
 import sys
+from configparser import ConfigParser
 import re
 import json
+import pymongo
 
 # used only because using strptime is impossible with this format
 _ugly_date_regexp = re.compile('(?P<month>\d{1,2})/'
@@ -11,6 +14,23 @@ _ugly_date_regexp = re.compile('(?P<month>\d{1,2})/'
                                '(?P<year>\d{2})'
                                '(?P<hour>\d{1,2}):'
                                '(?P<minute>\d{2})')
+
+
+def cmd_insert(args):
+    database = args.connection.patronage
+    collection = database.data
+    records_generator = csv_normalize(args.csvfile)
+    for (num, record) in enumerate(records_generator):
+        collection.save(record)
+    print(num, 'new objects imported to the database collection')
+
+
+def cmd_drop_all(args):
+    database = args.connection.patronage
+    collection = database.data
+    print('Removing', collection.count(), 'objects from collection ...')
+    collection.drop()
+    print('... Done')
 
 
 def json_complex_type_default(obj):
@@ -64,26 +84,40 @@ def main():
     parser = argparse.ArgumentParser(
         description='BLStream patronage challenge solution',
     )
-    parser.add_argument('csvfile', nargs='?',
-                        type=argparse.FileType('rU', bufsize=2**18),
-                        default=sys.stdin,
-                        help='defaults to stdin')
-    parser.add_argument('jsonfile', nargs='?',
-                        type=argparse.FileType('w', bufsize=2**18),
-                        default=sys.stdout,
-                        help='defaults to stdout')
+    parser.add_argument('-c', '--config', dest='config', required=True,
+                        type=argparse.FileType('r', bufsize=2**18),
+                        help='configuration file')
+    subparsers = parser.add_subparsers(title='commands',
+                                       help='additional help')
 
-    arguments = parser.parse_args()
+    # import command
+    parser_import = subparsers.add_parser('import')
+    parser_import.add_argument('csvfile', nargs='?',
+                               type=argparse.FileType('rU', bufsize=2**18),
+                               default=sys.stdin,
+                               help='defaults to stdin')
+    parser_import.set_defaults(cmdfunc=cmd_insert)
 
-    records_obj = csv_normalize(arguments.csvfile)
-    arguments.jsonfile.write(
-        json.dumps(
-            dict(records=[rec for rec in records_obj]),
-            default=json_complex_type_default,
-        )
+    # drop_all command
+    parser_drop = subparsers.add_parser('drop_all')
+    parser_drop.set_defaults(cmdfunc=cmd_drop_all)
+
+    # parse command line and configure according to config file
+    args = parser.parse_args()
+    cfg = ConfigParser()
+    cfg.read_file(args.config)
+    args.config.close()
+    args.connection = pymongo.MongoClient(
+        cfg.get('mongodb', 'host', fallback="localhost"),
+        cfg.getint('mongodb', 'port', fallback=27017),
     )
-    arguments.csvfile.close()
-    arguments.csvfile.close()
+
+    try:
+        args.cmdfunc(args)
+    except AttributeError:
+        print('command not found', file=sys.stderr)
+        parser.print_help()
+        return
 
 if __name__ == '__main__':
     main()
