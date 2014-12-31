@@ -33,6 +33,19 @@ def cmd_drop_all(args):
     print('... Done')
 
 
+def cmd_list_all(args):
+    database = args.connection.patronage
+    collection = database.data
+    for obj in collection.find():
+        keys = sorted(obj.keys())
+        kvpairs = ([key, obj[key]] for key in keys)
+        for kv in kvpairs:
+            if isinstance(kv[1], datetime.datetime):
+                kv[1] = kv[1].strftime('%c')
+            print(*kv, sep=': ')
+        print()
+
+
 def json_complex_type_default(obj):
     """ Function trying to serialize complex objects
     :param obj: object to test if it can be serialized to json
@@ -87,11 +100,14 @@ def main():
     parser.add_argument('-c', '--config', dest='config', required=True,
                         type=argparse.FileType('r', bufsize=2**18),
                         help='configuration file')
-    subparsers = parser.add_subparsers(title='commands',
-                                       help='additional help')
+    subparsers = parser.add_subparsers(
+        title='commands',
+        help='type <command> --help/-h for extra help'
+    )
 
     # import command
-    parser_import = subparsers.add_parser('import')
+    parser_import = subparsers.add_parser('import',
+                                          help='import file to db')
     parser_import.add_argument('csvfile', nargs='?',
                                type=argparse.FileType('rU', bufsize=2**18),
                                default=sys.stdin,
@@ -99,8 +115,14 @@ def main():
     parser_import.set_defaults(cmdfunc=cmd_insert)
 
     # drop_all command
-    parser_drop = subparsers.add_parser('drop_all')
+    parser_drop = subparsers.add_parser('drop_all',
+                                        help='drop all objects')
     parser_drop.set_defaults(cmdfunc=cmd_drop_all)
+
+    # list all command
+    parser_list = subparsers.add_parser('list_all',
+                                        help='list all objects')
+    parser_list.set_defaults(cmdfunc=cmd_list_all)
 
     # parse command line and configure according to config file
     args = parser.parse_args()
